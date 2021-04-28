@@ -1,0 +1,19 @@
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+  name: "aksamit21926-d062"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: "aksamit21926-d062"
+  template:
+    metadata:
+      labels:
+        app: "aksamit21926-d062"
+    spec:
+      containers:
+        - name: "aksamit21926-d062"
+          image: "githubaks.azurecr.io/aksamit21926"
+          ports:
+          - containerPort: 80
