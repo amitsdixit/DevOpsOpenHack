@@ -1,0 +1,64 @@
+on: [push]
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    
+    - uses: actions/checkout@master
+    
+    - uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Create ACR
+      id: create-acr
+      run: |
+        az acr create -n githubaks -g githubaksb24c-rg --location "East US" --sku Standard --admin-enabled
+        echo "::set-output name=acr_username::`az acr credential show -n githubaks --query username | xargs`"
+        echo "::set-output name=acr_password::`az acr credential show -n githubaks --query passwords[0].value | xargs`"
+        echo "::add-mask::`az acr credential show -n githubaks --query passwords[0].value | xargs`"
+
+    - uses: azure/docker-login@v1
+      with:
+        login-server: githubaks.azurecr.io
+        username: ${{ steps.create-acr.outputs.acr_username }}
+        password: ${{ steps.create-acr.outputs.acr_password }}
+
+    - name: Build and push image to ACR
+      id: build-image
+      run: |
+        docker build "$GITHUB_WORKSPACE/apis/poi/web" -f  "apis/poi/web/Dockerfile" -t githubaks.azurecr.io/aksamit21926:${{ github.sha }} --label dockerfile-path=apis/poi/web/Dockerfile
+        docker push githubaks.azurecr.io/aksamit21926:${{ github.sha }}
+    
+    - uses: azure/k8s-set-context@v1
+      id: login
+      with:
+         kubeconfig: ${{ secrets.aks_aksamit21926_kubeConfig }}
+    
+    - name: Create namespace
+      run: |
+        namespacePresent=`kubectl get namespace | grep aksamit21926be17 | wc -l`
+        if [ $namespacePresent -eq 0 ]
+        then
+            echo `kubectl create namespace aksamit21926be17`
+        fi
+
+    - uses: azure/k8s-create-secret@v1
+      with:
+        namespace: aksamit21926be17
+        container-registry-url: githubaks.azurecr.io
+        container-registry-username: ${{ steps.create-acr.outputs.acr_username }}
+        container-registry-password: ${{ steps.create-acr.outputs.acr_password }}
+        secret-name: aksamit21926dockerauth
+       
+    - uses: azure/k8s-deploy@v1.2
+      with:
+        namespace: aksamit21926be17
+        manifests: |
+          manifests/deployment.yml
+          manifests/service.yml
+          manifests/ingress.yml
+        images: |
+          githubaks.azurecr.io/aksamit21926:${{ github.sha }}
+        imagepullsecrets: |
+          aksamit21926dockerauth   
